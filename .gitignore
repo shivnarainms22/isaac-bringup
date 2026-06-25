@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.png
+*.log
+*.usd
+*.usdc
+.DS_Store

@@ -1,15 +1,18 @@
-"""Headless Isaac Sim bring-up: publish camera frames into the ROS 2 network.
+"""Headless Isaac Sim bring-up: spawn a Pegasus/PX4 drone and publish camera frames to ROS 2.
 
 Modes:
-  --no-vehicle : M1 minimal scene (ground + lit cube + one overhead camera -> /drone/rgb).
+  --no-vehicle : M1 minimal scene (ground + lit cube + overhead camera -> /drone/rgb).
                  Proves the bridge + host-net DDS + headless render with no Pegasus/PX4.
-  (default)    : M2/M3 path (load --scene, Pegasus-spawn the drone, cameras on the body).
-                 Implemented in later tasks.
+  (default)    : M2 - load --scene (Env.usd), Pegasus spawns the PX4-backed drone
+                 (PX4 autolaunched from --px4-dir, MAVLink HIL). Add --cameras for M3:
+                 attach RGB+Depth cameras to the drone body and publish /drone/rgb+/drone/depth.
 
-Run inside the Isaac container with the repo root on PYTHONPATH, e.g.:
-  PYTHONPATH=/work ./python.sh /work/isaac/bringup.py --no-vehicle --frames 1200
+Run inside the Isaac container with the repo root on PYTHONPATH (scripts/_entry.sh does this):
+  PYTHONPATH=/work ./python.sh /work/isaac/bringup.py --frames 0            # M2 spawn
+  PYTHONPATH=/work ./python.sh /work/isaac/bringup.py --cameras --frames 0  # M3 + cameras
+  PYTHONPATH=/work ./python.sh /work/isaac/bringup.py --no-vehicle          # M1
 
-Prints lines prefixed "BRINGUP " so progress survives a piped stdout (always flush=True).
+Prints lines prefixed "BRINGUP " (always flush=True) so progress survives a piped stdout.
 """
 import argparse
 
@@ -24,7 +27,12 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--no-vehicle", action="store_true",
                    help="M1: minimal scene + one camera, no Pegasus/PX4.")
-    p.add_argument("--scene", default=None, help="Path to a USD scene (e.g. Env.usd).")
+    p.add_argument("--scene", default="/ws/DroneRangerIssac/Env.usd",
+                   help="USD scene to load via Pegasus (default: the project Env.usd).")
+    p.add_argument("--px4-dir", default="/ws/PX4-Autopilot",
+                   help="PX4-Autopilot dir Pegasus autolaunches PX4 from.")
+    p.add_argument("--cameras", action="store_true",
+                   help="M3: attach RGB+Depth cameras to the drone body, publish to ROS 2.")
     p.add_argument("--frames", type=int, default=600,
                    help="Number of render steps to run, then exit. 0 = run until killed.")
     p.add_argument("--width", type=int, default=640, help="Camera width (px).")
@@ -42,7 +50,7 @@ def enable_ros2_bridge(app):
 
 
 def build_minimal_scene(world, width=640, height=480):
-    """Ground plane + a lit red cube + an overhead camera. Returns the camera prim path."""
+    """M1: ground plane + a lit red cube + an overhead camera. Returns the camera prim path."""
     import numpy as np
     from pxr import UsdLux, Sdf
     import omni.usd
@@ -56,7 +64,6 @@ def build_minimal_scene(world, width=640, height=480):
                  color=np.array([1.0, 0.1, 0.1]))
     log("cube added")
 
-    # Dome light so the RGB frame isn't black.
     stage = omni.usd.get_context().get_stage()
     dome = UsdLux.DomeLight.Define(stage, Sdf.Path("/World/DomeLight"))
     dome.CreateIntensityAttr(1000.0)
@@ -64,13 +71,67 @@ def build_minimal_scene(world, width=640, height=480):
 
     cam_path = "/World/OverheadCam"
     create_camera_prim(cam_path)
-    # Default USD camera looks down -Z; placed 5 m up with no rotation it looks straight
-    # down at the cube/ground -> guaranteed non-blank frame.
     set_prim_transform(cam_path, translate=(0.0, 0.0, 5.0), orient_euler_deg=(0.0, 0.0, 0.0))
     build_camera_ros_graph("/World/CamGraph", cam_path, "/drone/rgb", "rgb",
                            width=width, height=height)
     log(f"minimal scene built: /drone/rgb publisher ({width}x{height}) on overhead camera")
     return cam_path
+
+
+def build_pegasus_vehicle(scene, px4_dir):
+    """M2: Pegasus interface + World, load the scene, spawn a PX4-backed Iris drone.
+
+    Mirrors PegasusSimulator examples/1_px4_single_vehicle.py. Pegasus owns the World
+    singleton (do NOT create our own). PX4 is autolaunched from px4_dir over MAVLink HIL.
+    """
+    from omni.isaac.core.world import World
+    from scipy.spatial.transform import Rotation
+    from pegasus.simulator.params import ROBOTS
+    from pegasus.simulator.logic.backends.px4_mavlink_backend import (
+        PX4MavlinkBackend, PX4MavlinkBackendConfig)
+    from pegasus.simulator.logic.vehicles.multirotor import Multirotor, MultirotorConfig
+    from pegasus.simulator.logic.interface.pegasus_interface import PegasusInterface
+
+    pg = PegasusInterface()
+    pg._world = World(**pg._world_settings)
+    world = pg.world
+    log("pegasus interface + world created")
+
+    pg.load_environment(scene)
+    log(f"environment loaded: {scene}")
+
+    config = MultirotorConfig()
+    mavlink_config = PX4MavlinkBackendConfig({
+        "vehicle_id": 0,
+        "px4_autolaunch": True,
+        "px4_dir": px4_dir,
+        "px4_vehicle_model": pg.px4_default_airframe,  # >= v1.14 uses the default airframe
+    })
+    config.backends = [PX4MavlinkBackend(mavlink_config)]
+
+    Multirotor(
+        "/World/quadrotor",
+        ROBOTS["Iris"],
+        0,
+        [0.0, 0.0, 0.07],
+        Rotation.from_euler("XYZ", [0.0, 0.0, 0.0], degrees=True).as_quat(),
+        config=config,
+    )
+    log(f"multirotor spawned (Iris) with PX4 autolaunch from {px4_dir}")
+    return pg, world
+
+
+def attach_drone_cameras(width=640, height=480):
+    """M3: RGB+Depth cameras parented to the drone body, published to ROS 2."""
+    from isaac.camera_graph import build_rgbd, set_prim_transform
+    from isaac.camera_config import DEFAULT_FORWARD_MOUNT, to_usd_transform
+
+    body = "/World/quadrotor/body/body"  # matches DroneRangerIssac/setup_drone_cameras.py
+    rgb_cam, depth_cam = build_rgbd(body, width=width, height=height)
+    t = to_usd_transform(DEFAULT_FORWARD_MOUNT)
+    set_prim_transform(rgb_cam, t.translate, t.orient_euler_deg)
+    set_prim_transform(depth_cam, t.translate, t.orient_euler_deg)
+    log("drone cameras attached: /drone/rgb + /drone/depth on body")
 
 
 def run_loop(world, frames):
@@ -93,18 +154,23 @@ def main():
     args = parse_args()
     app = SimulationApp({"headless": True})
     try:
-        enable_ros2_bridge(app)
-        from isaacsim.core.api import World
-        world = World()
-        log("world created")
+        if args.no_vehicle or args.cameras:
+            enable_ros2_bridge(app)
 
         if args.no_vehicle:
+            from isaacsim.core.api import World
+            world = World()
+            log("world created")
             build_minimal_scene(world, width=args.width, height=args.height)
+            world.reset()
+            log("world reset")
         else:
-            raise SystemExit("BRINGUP vehicle path not implemented yet (M2/M3).")
+            pg, world = build_pegasus_vehicle(args.scene, args.px4_dir)
+            if args.cameras:
+                attach_drone_cameras(width=args.width, height=args.height)
+            world.reset()
+            log("world reset")
 
-        world.reset()
-        log("world reset")
         run_loop(world, args.frames)
     except BaseException as e:  # surface the real error before Isaac's hard shutdown
         log(f"ERROR: {type(e).__name__}: {e}")

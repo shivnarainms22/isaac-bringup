@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Force FastDDS to use UDPv4 only and disable the builtin shared-memory transport.
+
+     Isaac Sim's bundled FastDDS and an external ros:jazzy container's FastDDS have
+     incompatible shared-memory segment formats. For same-host peers FastDDS prefers SHM,
+     so data samples are silently dropped even though discovery (UDP multicast) succeeds
+     -> topic visible, zero messages, independent of message size. Disabling SHM forces
+     all data over UDP, which both builds handle compatibly.
+
+     Apply on BOTH publisher and subscriber via:
+       export FASTRTPS_DEFAULT_PROFILES_FILE=/path/to/fastdds_udp_only.xml
+       export FASTDDS_DEFAULT_PROFILES_FILE=/path/to/fastdds_udp_only.xml
+-->
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+    <profiles>
+        <transport_descriptors>
+            <transport_descriptor>
+                <transport_id>udp_only_transport</transport_id>
+                <type>UDPv4</type>
+            </transport_descriptor>
+        </transport_descriptors>
+        <participant profile_name="udp_only" is_default_profile="true">
+            <rtps>
+                <userTransports>
+                    <transport_id>udp_only_transport</transport_id>
+                </userTransports>
+                <useBuiltinTransports>false</useBuiltinTransports>
+            </rtps>
+        </participant>
+    </profiles>
+</dds>

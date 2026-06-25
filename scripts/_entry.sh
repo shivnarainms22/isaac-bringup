@@ -13,6 +13,10 @@ export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}:${BRIDGE_LIB}"
 export PYTHONUNBUFFERED=1
 export PYTHONPATH="${PYTHONPATH:-/work}"
+# Force UDP-only DDS transport: Isaac's bundled FastDDS and external FastDDS have
+# incompatible shared-memory segments, so SHM silently drops all data. See config XML.
+export FASTRTPS_DEFAULT_PROFILES_FILE="${FASTRTPS_DEFAULT_PROFILES_FILE:-/work/config/fastdds_udp_only.xml}"
+export FASTDDS_DEFAULT_PROFILES_FILE="${FASTDDS_DEFAULT_PROFILES_FILE:-/work/config/fastdds_udp_only.xml}"
 
 cd /isaac-sim
 exec ./python.sh /work/isaac/bringup.py "$@"

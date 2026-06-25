@@ -8,6 +8,9 @@ set -eo pipefail  # NOT -u: ROS setup.bash references unbound vars
 
 export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
+# Match the publisher: UDP-only transport (Isaac<->external FastDDS SHM is incompatible).
+export FASTRTPS_DEFAULT_PROFILES_FILE="${FASTRTPS_DEFAULT_PROFILES_FILE:-/work/config/fastdds_udp_only.xml}"
+export FASTDDS_DEFAULT_PROFILES_FILE="${FASTDDS_DEFAULT_PROFILES_FILE:-/work/config/fastdds_udp_only.xml}"
 source /opt/ros/jazzy/setup.bash
 
 echo "== ros2 topic list (grep drone/fmu) =="

@@ -25,10 +25,10 @@ for mod in modules:
         results[mod] = f"FAIL: {type(e).__name__}: {e}"
 
 for mod, status in results.items():
-    print(f"PROBE {mod}: {status}")
+    print(f"PROBE {mod}: {status}", flush=True)
 
 all_ok = all(v == "OK" for v in results.values())
-print(f"PROBE RESULT: {'ALL_OK' if all_ok else 'SOME_FAILED'}")
+print(f"PROBE RESULT: {'ALL_OK' if all_ok else 'SOME_FAILED'}", flush=True)
 
 app.close()
-print("PROBE DONE")
+print("PROBE DONE", flush=True)

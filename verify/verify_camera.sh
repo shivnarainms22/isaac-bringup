@@ -4,7 +4,7 @@
 # --network=host with the same ROS_DOMAIN_ID as the publisher.
 #
 # Usage: bash verify_camera.sh /drone/rgb [/drone/depth ...]
-set -euo pipefail
+set -eo pipefail  # NOT -u: ROS setup.bash references unbound vars
 
 export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"

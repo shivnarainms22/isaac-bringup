@@ -41,20 +41,24 @@ def enable_ros2_bridge(app):
 
 def build_minimal_scene(world):
     """Ground plane + a lit red cube + an overhead camera. Returns the camera prim path."""
-    from pxr import UsdLux, Sdf, Gf
+    import numpy as np
+    from pxr import UsdLux, Sdf
     import omni.usd
     from isaacsim.core.api.objects import VisualCuboid
     from isaac.camera_graph import create_camera_prim, set_prim_transform, build_camera_ros_graph
 
     world.scene.add_default_ground_plane()
+    log("ground plane added")
     VisualCuboid(prim_path="/World/Cube", name="cube",
-                 position=Gf.Vec3f(0.0, 0.0, 0.5), scale=Gf.Vec3f(1.0, 1.0, 1.0),
-                 color=[1.0, 0.1, 0.1])
+                 position=np.array([0.0, 0.0, 0.5]), scale=np.array([1.0, 1.0, 1.0]),
+                 color=np.array([1.0, 0.1, 0.1]))
+    log("cube added")
 
     # Dome light so the RGB frame isn't black.
     stage = omni.usd.get_context().get_stage()
     dome = UsdLux.DomeLight.Define(stage, Sdf.Path("/World/DomeLight"))
     dome.CreateIntensityAttr(1000.0)
+    log("dome light added")
 
     cam_path = "/World/OverheadCam"
     create_camera_prim(cam_path)
@@ -82,12 +86,14 @@ def run_loop(world, frames):
 
 
 def main():
+    import traceback
     args = parse_args()
     app = SimulationApp({"headless": True})
     try:
         enable_ros2_bridge(app)
         from isaacsim.core.api import World
         world = World()
+        log("world created")
 
         if args.no_vehicle:
             build_minimal_scene(world)
@@ -95,7 +101,11 @@ def main():
             raise SystemExit("BRINGUP vehicle path not implemented yet (M2/M3).")
 
         world.reset()
+        log("world reset")
         run_loop(world, args.frames)
+    except BaseException as e:  # surface the real error before Isaac's hard shutdown
+        log(f"ERROR: {type(e).__name__}: {e}")
+        log("TRACEBACK:\n" + traceback.format_exc())
     finally:
         app.close()
         log("app closed")

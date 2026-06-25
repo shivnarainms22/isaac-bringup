@@ -27,6 +27,8 @@ def parse_args():
     p.add_argument("--scene", default=None, help="Path to a USD scene (e.g. Env.usd).")
     p.add_argument("--frames", type=int, default=600,
                    help="Number of render steps to run, then exit. 0 = run until killed.")
+    p.add_argument("--width", type=int, default=640, help="Camera width (px).")
+    p.add_argument("--height", type=int, default=480, help="Camera height (px).")
     return p.parse_args()
 
 
@@ -39,7 +41,7 @@ def enable_ros2_bridge(app):
     log(f"ros2 bridge enabled: {ok}")
 
 
-def build_minimal_scene(world):
+def build_minimal_scene(world, width=640, height=480):
     """Ground plane + a lit red cube + an overhead camera. Returns the camera prim path."""
     import numpy as np
     from pxr import UsdLux, Sdf
@@ -65,8 +67,9 @@ def build_minimal_scene(world):
     # Default USD camera looks down -Z; placed 5 m up with no rotation it looks straight
     # down at the cube/ground -> guaranteed non-blank frame.
     set_prim_transform(cam_path, translate=(0.0, 0.0, 5.0), orient_euler_deg=(0.0, 0.0, 0.0))
-    build_camera_ros_graph("/World/CamGraph", cam_path, "/drone/rgb", "rgb")
-    log("minimal scene built: /drone/rgb publisher on overhead camera")
+    build_camera_ros_graph("/World/CamGraph", cam_path, "/drone/rgb", "rgb",
+                           width=width, height=height)
+    log(f"minimal scene built: /drone/rgb publisher ({width}x{height}) on overhead camera")
     return cam_path
 
 
@@ -96,7 +99,7 @@ def main():
         log("world created")
 
         if args.no_vehicle:
-            build_minimal_scene(world)
+            build_minimal_scene(world, width=args.width, height=args.height)
         else:
             raise SystemExit("BRINGUP vehicle path not implemented yet (M2/M3).")
 

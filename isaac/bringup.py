@@ -31,6 +31,9 @@ def parse_args():
                    help="USD scene to load via Pegasus (default: the project Env.usd).")
     p.add_argument("--px4-dir", default="/ws/PX4-Autopilot",
                    help="PX4-Autopilot dir Pegasus autolaunches PX4 from.")
+    p.add_argument("--env", default=None,
+                   help="Use a Pegasus built-in environment by name (e.g. 'Curved Gridroom') "
+                        "instead of --scene. Isolates PX4/heartbeat from Env.usd loading.")
     p.add_argument("--cameras", action="store_true",
                    help="M3: attach RGB+Depth cameras to the drone body, publish to ROS 2.")
     p.add_argument("--frames", type=int, default=600,
@@ -78,15 +81,16 @@ def build_minimal_scene(world, width=640, height=480):
     return cam_path
 
 
-def build_pegasus_vehicle(scene, px4_dir):
+def build_pegasus_vehicle(scene, px4_dir, env_name=None):
     """M2: Pegasus interface + World, load the scene, spawn a PX4-backed Iris drone.
 
     Mirrors PegasusSimulator examples/1_px4_single_vehicle.py. Pegasus owns the World
     singleton (do NOT create our own). PX4 is autolaunched from px4_dir over MAVLink HIL.
+    If env_name is given, loads that Pegasus built-in environment instead of `scene`.
     """
     from omni.isaac.core.world import World
     from scipy.spatial.transform import Rotation
-    from pegasus.simulator.params import ROBOTS
+    from pegasus.simulator.params import ROBOTS, SIMULATION_ENVIRONMENTS
     from pegasus.simulator.logic.backends.px4_mavlink_backend import (
         PX4MavlinkBackend, PX4MavlinkBackendConfig)
     from pegasus.simulator.logic.vehicles.multirotor import Multirotor, MultirotorConfig
@@ -97,8 +101,12 @@ def build_pegasus_vehicle(scene, px4_dir):
     world = pg.world
     log("pegasus interface + world created")
 
-    pg.load_environment(scene)
-    log(f"environment loaded: {scene}")
+    if env_name:
+        pg.load_environment(SIMULATION_ENVIRONMENTS[env_name])
+        log(f"environment loaded (builtin): {env_name}")
+    else:
+        pg.load_environment(scene)
+        log(f"environment loaded: {scene}")
 
     config = MultirotorConfig()
     mavlink_config = PX4MavlinkBackendConfig({
@@ -165,7 +173,7 @@ def main():
             world.reset()
             log("world reset")
         else:
-            pg, world = build_pegasus_vehicle(args.scene, args.px4_dir)
+            pg, world = build_pegasus_vehicle(args.scene, args.px4_dir, env_name=args.env)
             if args.cameras:
                 attach_drone_cameras(width=args.width, height=args.height)
             world.reset()

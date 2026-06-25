@@ -25,7 +25,12 @@ clone https://github.com/RipZou/DroneRangerIssac.git DroneRangerIssac
 
 echo "STAGE 2: PX4 python deps (user site, no sudo)"
 python3 -m pip install --user --upgrade pip >/dev/null 2>&1 || true
+# PX4 v1.14.3 requirements.txt has malformed specifiers like 'matplotlib>=3.0.*' (the '.*'
+# suffix is only valid with ==/!=); newer pip rejects them. Strip the trailing '.*'.
+sed -i -E 's/(>=[0-9]+(\.[0-9]+)?)\.\*/\1/g' PX4-Autopilot/Tools/setup/requirements.txt
 python3 -m pip install --user -r PX4-Autopilot/Tools/setup/requirements.txt
+# empy 4.x changed its API and breaks the PX4 1.14 build; pin the known-good version.
+python3 -m pip install --user "empy==3.3.4"
 
 echo "STAGE 3: XRCE Fast-DDS tag fix (deleted upstream branch 2.12.x -> v2.12.2)"
 XC="Micro-XRCE-DDS-Agent/CMakeLists.txt"

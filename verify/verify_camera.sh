@@ -14,6 +14,8 @@ echo "== ros2 topic list (grep drone/fmu) =="
 ros2 topic list | grep -E "drone|fmu" || echo "(no drone/fmu topics seen)"
 
 for t in "$@"; do
-  echo "== ros2 topic hz $t (7s window) =="
-  timeout 9 ros2 topic hz "$t" || echo "(no messages on $t within window)"
+  echo "== ros2 topic hz $t (best_effort, 7s window) =="
+  # best_effort subscriber is compatible with BOTH best_effort and reliable publishers;
+  # Isaac's camera helper publishes best_effort, so a default (reliable) hz sees 0 msgs.
+  timeout 9 ros2 topic hz "$t" --qos-reliability best_effort || echo "(no messages on $t within window)"
 done

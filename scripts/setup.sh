@@ -41,7 +41,10 @@ echo "STAGE 4: build Micro-XRCE-DDS agent"
 echo "  XRCE binary: $(ls -1 "$WS"/Micro-XRCE-DDS-Agent/build/MicroXRCEAgent 2>/dev/null || echo MISSING)"
 
 echo "STAGE 5: build PX4 SITL (SLOW, ~20-40 min)"
-( cd PX4-Autopilot && make px4_sitl_default )
+# Host cmake is new (>=3.31) and removed compat for PX4 1.14.3's old cmake_minimum_required
+# (<3.5) in submodules. CMAKE_POLICY_VERSION_MINIMUM=3.5 is the supported escape hatch
+# (honored as an env var in cmake >=3.31). Clear any half-configured build dir first.
+( cd PX4-Autopilot && rm -rf build/px4_sitl_default && CMAKE_POLICY_VERSION_MINIMUM=3.5 make px4_sitl_default )
 echo "  PX4 binary: $(ls -1 "$WS"/PX4-Autopilot/build/px4_sitl_default/bin/px4 2>/dev/null || echo MISSING)"
 
 echo "STAGE 6: disk check"

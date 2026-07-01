@@ -31,6 +31,10 @@ def parse_args():
                    help="USD scene to load via Pegasus (default: the project Env.usd).")
     p.add_argument("--px4-dir", default="/ws/PX4-Autopilot",
                    help="PX4-Autopilot dir Pegasus autolaunches PX4 from.")
+    p.add_argument("--external-px4", action="store_true",
+                   help="Do NOT autolaunch PX4 in-container; connect to a PX4 already "
+                        "running on the host (over --network=host). Use when the container's "
+                        "PX4 binary can't load its host-built libs (e.g. libgz-transport).")
     p.add_argument("--env", default=None,
                    help="Use a Pegasus built-in environment by name (e.g. 'Curved Gridroom') "
                         "instead of --scene. Isolates PX4/heartbeat from Env.usd loading.")
@@ -81,12 +85,13 @@ def build_minimal_scene(world, width=640, height=480):
     return cam_path
 
 
-def build_pegasus_vehicle(scene, px4_dir, env_name=None):
+def build_pegasus_vehicle(scene, px4_dir, env_name=None, px4_autolaunch=True):
     """M2: Pegasus interface + World, load the scene, spawn a PX4-backed Iris drone.
 
     Mirrors PegasusSimulator examples/1_px4_single_vehicle.py. Pegasus owns the World
-    singleton (do NOT create our own). PX4 is autolaunched from px4_dir over MAVLink HIL.
-    If env_name is given, loads that Pegasus built-in environment instead of `scene`.
+    singleton (do NOT create our own). If px4_autolaunch, PX4 is launched from px4_dir;
+    otherwise Pegasus connects to a PX4 already running externally (e.g. on the host over
+    --network=host). If env_name is given, loads that built-in environment instead of `scene`.
     """
     from omni.isaac.core.world import World
     from scipy.spatial.transform import Rotation
@@ -111,7 +116,7 @@ def build_pegasus_vehicle(scene, px4_dir, env_name=None):
     config = MultirotorConfig()
     mavlink_config = PX4MavlinkBackendConfig({
         "vehicle_id": 0,
-        "px4_autolaunch": True,
+        "px4_autolaunch": px4_autolaunch,
         "px4_dir": px4_dir,
         "px4_vehicle_model": pg.px4_default_airframe,  # >= v1.14 uses the default airframe
     })
@@ -125,7 +130,10 @@ def build_pegasus_vehicle(scene, px4_dir, env_name=None):
         Rotation.from_euler("XYZ", [0.0, 0.0, 0.0], degrees=True).as_quat(),
         config=config,
     )
-    log(f"multirotor spawned (Iris) with PX4 autolaunch from {px4_dir}")
+    if px4_autolaunch:
+        log(f"multirotor spawned (Iris) with PX4 autolaunch from {px4_dir}")
+    else:
+        log("multirotor spawned (Iris); connecting to EXTERNAL PX4 (no autolaunch)")
     return pg, world
 
 
@@ -173,7 +181,8 @@ def main():
             world.reset()
             log("world reset")
         else:
-            pg, world = build_pegasus_vehicle(args.scene, args.px4_dir, env_name=args.env)
+            pg, world = build_pegasus_vehicle(args.scene, args.px4_dir, env_name=args.env,
+                                              px4_autolaunch=not args.external_px4)
             if args.cameras:
                 attach_drone_cameras(width=args.width, height=args.height)
             world.reset()

@@ -65,8 +65,16 @@ start_sim() {
   [ -n "$ENV_NAME" ] && env_arg=(--env "$ENV_NAME")
   # Set STATIC_CAM=1 to also publish /static_cam/rgb from a ground camera looking up at the
   # drone (the static-cam YOLO experiment). See detect/README.md + scripts/run_detect.sh.
+  # Override the camera aim without editing code:
+  #   STATIC_CAM_POS="X Y Z"     world position (metres)
+  #   STATIC_CAM_EULER="RX RY RZ" USD RotateXYZ degrees. NOTE convention: RX=0 looks straight
+  #                               DOWN, RX=90 looks horizontally toward +Y, RX=180 looks UP.
   local static_arg=()
-  [ -n "${STATIC_CAM:-}" ] && static_arg=(--static-cam)
+  if [ -n "${STATIC_CAM:-}" ]; then
+    static_arg=(--static-cam)
+    [ -n "${STATIC_CAM_POS:-}" ]   && static_arg+=(--static-cam-pos ${STATIC_CAM_POS})
+    [ -n "${STATIC_CAM_EULER:-}" ] && static_arg+=(--static-cam-euler ${STATIC_CAM_EULER})
+  fi
   nohup docker exec "$CONTAINER" bash /work/scripts/_entry.sh \
       "${env_arg[@]}" --external-px4 --cameras "${static_arg[@]}" --frames 0 > "$SIM_LOG" 2>&1 &
   echo "[run_session] sim launching. Watch it:  tail -f $SIM_LOG"

@@ -58,6 +58,40 @@ Pipeline-only smoke test with COCO (no "drone" class; look for what it confuses 
 bash ~/isaac-bringup/scripts/run_detect.sh --weights yolov8n.pt --classes airplane,bird,kite --frames 100
 ```
 
+## Result so far (2026-07-17)
+
+**The viewpoint works.** A static ground camera pointed at the drone, run through the public
+drone model, **detected the drone at 0.76 confidence with a tight box on 100% of frames** —
+once the scene was lit and the drone was reasonably sized. Progression:
+
+| Condition | Detection rate | Confidence |
+|-----------|---------------|------------|
+| Drone off-frame (bad aim) | 0% | — |
+| In frame, dark scene, `--conf 0.25` | 0% | under threshold |
+| In frame, dark scene, `--conf 0.05` | 100% | 0.17 (sees it, but dim) |
+| `SCENE_LIGHT=2500` + camera at 1.2 m | 100% | **0.76** |
+
+The early zeros were darkness + small scale (rendering realism), **not** the viewpoint or the
+detector. Still to validate for the real checkpoint case: a **flying** drone seen from **below**
+at realistic **range**, in **outdoor** light.
+
+Command that produced the confident result:
+```
+STATIC_CAM=1 STATIC_CAM_POS="0 -1.2 0.25" STATIC_CAM_EULER="88 0 0" SCENE_LIGHT="2500" bash scripts/run_session.sh start
+bash scripts/run_detect.sh --frames 120 --save-dir /work/detect/out
+```
+
+## Deployment notes (learned the hard way)
+
+- **The GPU box cannot reach huggingface.co** (firewall resets the TLS connection; PyPI is fine,
+  so the image builds). `setup_detect.sh`'s auto-download of the weights will fail there.
+  Workaround: download `drone.pt` on a machine that *can* reach HF, then `scp` it to
+  `~/isaac-bringup/detect/weights/drone.pt` on the box.
+- **Aim convention** (USD RotateXYZ, found empirically): `RX=0` looks straight **down**,
+  `RX=90` looks **horizontal** toward +Y, `RX=180` looks **up**. Set aim via
+  `STATIC_CAM_POS` / `STATIC_CAM_EULER`; brighten a dark scene with `SCENE_LIGHT`.
+- Frames are on a headless box — `scp` a saved frame to a desktop to eyeball it.
+
 ## Reading the verdict
 
 ```

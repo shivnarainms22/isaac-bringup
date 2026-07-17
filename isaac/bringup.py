@@ -121,14 +121,17 @@ def build_drone_from_below_scene(alt, standoff, light, width=640, height=480):
     stage = omni.usd.get_context().get_stage()
 
     # A dome light FAILS for a from-below shot: looking up, the dome IS the background, so it
-    # lights the drone and the "sky" to the same grey -> near-zero contrast (the drone vanishes).
-    # Instead light the drone from below with a distant light shining UP (euler 180 flips its
-    # default downward emission to upward), leaving the background dark. That reproduces the
-    # lit-drone-on-dark-background look that gave the 0.76 grounded detection.
-    sun = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/SunLight"))
-    sun.CreateIntensityAttr(float(light))
-    set_prim_transform("/World/SunLight", translate=(0.0, 0.0, 0.0), orient_euler_deg=(180.0, 0.0, 0.0))
-    log(f"distant light (shining up) added: intensity {light}")
+    # lights the drone and the "sky" to the same grey -> no contrast (the drone vanishes). A
+    # distant light did nothing visible. A SPHERE light placed right next to the drone reliably
+    # lights its camera-facing side strongly while the distant background stays dark -> the
+    # lit-drone-on-dark look that gave the 0.76 grounded detection. Tune brightness with
+    # --scene-light (this is its intensity): too dark -> x10, washed out -> /10.
+    key = UsdLux.SphereLight.Define(stage, Sdf.Path("/World/DroneKeyLight"))
+    key.CreateRadiusAttr(0.5)
+    key.CreateIntensityAttr(float(light))
+    key_pos = (0.0, -min(2.0, float(standoff) * 0.4), max(0.5, float(alt) - 0.5))
+    set_prim_transform("/World/DroneKeyLight", translate=key_pos, orient_euler_deg=(0.0, 0.0, 0.0))
+    log(f"sphere key light at {key_pos} intensity {light} (tune via --scene-light)")
 
     # Reference the Iris mesh as a plain, static prop at altitude (we never step physics, so
     # it simply hangs there).
@@ -294,7 +297,7 @@ def main():
             enable_ros2_bridge(app)
 
         if args.drone_prop_alt > 0.0:
-            light = args.scene_light if args.scene_light > 0.0 else 3000.0
+            light = args.scene_light if args.scene_light > 0.0 else 30000.0
             build_drone_from_below_scene(args.drone_prop_alt, args.drone_prop_standoff, light,
                                          width=args.width, height=args.height)
             log("from-below scene built")

@@ -63,10 +63,15 @@ start_sim() {
   docker exec "$CONTAINER" pkill -f bringup.py 2>/dev/null || true
   local env_arg=()
   [ -n "$ENV_NAME" ] && env_arg=(--env "$ENV_NAME")
+  # Set STATIC_CAM=1 to also publish /static_cam/rgb from a ground camera looking up at the
+  # drone (the static-cam YOLO experiment). See detect/README.md + scripts/run_detect.sh.
+  local static_arg=()
+  [ -n "${STATIC_CAM:-}" ] && static_arg=(--static-cam)
   nohup docker exec "$CONTAINER" bash /work/scripts/_entry.sh \
-      "${env_arg[@]}" --external-px4 --cameras --frames 0 > "$SIM_LOG" 2>&1 &
+      "${env_arg[@]}" --external-px4 --cameras "${static_arg[@]}" --frames 0 > "$SIM_LOG" 2>&1 &
   echo "[run_session] sim launching. Watch it:  tail -f $SIM_LOG"
   echo "[run_session] (expect: ros2 bridge enabled -> multirotor spawned -> cameras attached -> stepped)"
+  [ -n "${STATIC_CAM:-}" ] && echo "[run_session] static cam ON -> also publishing /static_cam/rgb"
 }
 
 stop_all() {
@@ -80,7 +85,7 @@ status() {
   echo "== PX4 ($PX4_LOG) =="
   grep -iE "Simulator connected|Ready for takeoff|poll timeout|already running" "$PX4_LOG" 2>/dev/null | tail -5 || echo "(no px4 log yet)"
   echo "== SIM ($SIM_LOG) =="
-  grep -iE "cameras attached|Waiting for first|ERROR|Traceback|stepped" "$SIM_LOG" 2>/dev/null | tail -5 || echo "(no sim log yet)"
+  grep -iE "cameras attached|static ground camera|Waiting for first|ERROR|Traceback|stepped" "$SIM_LOG" 2>/dev/null | tail -6 || echo "(no sim log yet)"
   echo "== verify camera topics (UDP-only ros:jazzy consumer) =="
   echo "docker run --rm --network=host --ipc=host -e ROS_DOMAIN_ID=0 -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp -e FASTRTPS_DEFAULT_PROFILES_FILE=/work/config/fastdds_udp_only.xml -e FASTDDS_DEFAULT_PROFILES_FILE=/work/config/fastdds_udp_only.xml -v \$HOME/isaac-bringup:/work ros:jazzy bash -lc 'ros2 topic list | grep -i drone'"
 }

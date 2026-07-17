@@ -40,6 +40,16 @@ def parse_args():
                         "instead of --scene. Isolates PX4/heartbeat from Env.usd loading.")
     p.add_argument("--cameras", action="store_true",
                    help="M3: attach RGB+Depth cameras to the drone body, publish to ROS 2.")
+    p.add_argument("--static-cam", action="store_true",
+                   help="Static-cam experiment: add a fixed ground camera looking up at the "
+                        "drone, publishing /static_cam/rgb (for the ground-viewpoint YOLO test).")
+    p.add_argument("--static-cam-pos", type=float, nargs=3, default=None,
+                   metavar=("X", "Y", "Z"),
+                   help="World position of the static ground camera (default from static_cam.py).")
+    p.add_argument("--static-cam-euler", type=float, nargs=3, default=None,
+                   metavar=("RX", "RY", "RZ"),
+                   help="USD RotateXYZ Euler degrees for the static camera aim "
+                        "(default from static_cam.py; tune with verify/grab_frame.py).")
     p.add_argument("--frames", type=int, default=600,
                    help="Number of render steps to run, then exit. 0 = run until killed.")
     p.add_argument("--width", type=int, default=640, help="Camera width (px).")
@@ -150,6 +160,29 @@ def attach_drone_cameras(width=640, height=480):
     log("drone cameras attached: /drone/rgb + /drone/depth on body")
 
 
+def attach_static_ground_camera(translate, orient_euler_deg, width=640, height=480):
+    """Static-cam experiment: a fixed WORLD camera on the ground, aimed up at the drone.
+
+    Publishes /static_cam/rgb. Not parented to the drone -- it stands off in the scene like
+    a security camera looking up/across, the viewpoint the drone's own detector never sees.
+    Reuses the same camera->ROS graph builder as the drone cameras (DRY).
+    """
+    from isaac.camera_graph import create_camera_prim, set_prim_transform, build_camera_ros_graph
+    from isaac.static_cam import elevation_deg, ground_range_m, NOMINAL_DRONE_HOVER
+
+    cam_path = "/World/StaticGroundCam"
+    create_camera_prim(cam_path)
+    set_prim_transform(cam_path, translate, orient_euler_deg)
+    build_camera_ros_graph("/World/StaticCamGraph", cam_path, "/static_cam/rgb", "rgb",
+                           width=width, height=height, frame_id="static_cam")
+    elev = elevation_deg(translate, NOMINAL_DRONE_HOVER)
+    rng = ground_range_m(translate, NOMINAL_DRONE_HOVER)
+    log(f"static ground camera attached: /static_cam/rgb at {tuple(translate)} "
+        f"euler {tuple(orient_euler_deg)}")
+    log(f"  suggested aim: elevation ~{elev:.1f} deg, range ~{rng:.1f} m to nominal hover "
+        f"{NOMINAL_DRONE_HOVER} -- tune euler with verify/grab_frame.py if the drone is off-frame")
+
+
 def run_loop(world, frames):
     """Play the timeline (so OnPlaybackTick fires) and step the sim, rendering each frame."""
     import omni.timeline
@@ -170,7 +203,7 @@ def main():
     args = parse_args()
     app = SimulationApp({"headless": True})
     try:
-        if args.no_vehicle or args.cameras:
+        if args.no_vehicle or args.cameras or args.static_cam:
             enable_ros2_bridge(app)
 
         if args.no_vehicle:
@@ -185,6 +218,13 @@ def main():
                                               px4_autolaunch=not args.external_px4)
             if args.cameras:
                 attach_drone_cameras(width=args.width, height=args.height)
+            if args.static_cam:
+                from isaac.static_cam import DEFAULT_STATIC_CAM
+                pos = args.static_cam_pos if args.static_cam_pos is not None \
+                    else DEFAULT_STATIC_CAM.translate
+                euler = args.static_cam_euler if args.static_cam_euler is not None \
+                    else DEFAULT_STATIC_CAM.orient_euler_deg
+                attach_static_ground_camera(pos, euler, width=args.width, height=args.height)
             world.reset()
             log("world reset")
 

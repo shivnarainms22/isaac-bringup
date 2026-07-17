@@ -120,9 +120,15 @@ def build_drone_from_below_scene(alt, standoff, light, width=640, height=480):
 
     stage = omni.usd.get_context().get_stage()
 
-    dome = UsdLux.DomeLight.Define(stage, Sdf.Path("/World/DomeLight"))
-    dome.CreateIntensityAttr(float(light))
-    log(f"dome light added: intensity {light}")
+    # A dome light FAILS for a from-below shot: looking up, the dome IS the background, so it
+    # lights the drone and the "sky" to the same grey -> near-zero contrast (the drone vanishes).
+    # Instead light the drone from below with a distant light shining UP (euler 180 flips its
+    # default downward emission to upward), leaving the background dark. That reproduces the
+    # lit-drone-on-dark-background look that gave the 0.76 grounded detection.
+    sun = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/SunLight"))
+    sun.CreateIntensityAttr(float(light))
+    set_prim_transform("/World/SunLight", translate=(0.0, 0.0, 0.0), orient_euler_deg=(180.0, 0.0, 0.0))
+    log(f"distant light (shining up) added: intensity {light}")
 
     # Reference the Iris mesh as a plain, static prop at altitude (we never step physics, so
     # it simply hangs there).

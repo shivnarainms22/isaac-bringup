@@ -8,6 +8,7 @@ from isaac.static_cam import (
     NOMINAL_DRONE_HOVER,
     elevation_deg,
     ground_range_m,
+    look_up_euler_deg,
 )
 
 
@@ -38,6 +39,24 @@ def test_default_camera_points_up_at_the_hover_point():
 def test_ground_range_is_euclidean():
     assert ground_range_m((0.0, 0.0, 0.0), (3.0, 4.0, 0.0)) == pytest.approx(5.0)
     assert ground_range_m((0.0, 0.0, 0.0), (0.0, 0.0, 2.0)) == pytest.approx(2.0)
+
+
+def test_look_up_euler_level_target_is_ninety():
+    # Target level with the camera -> horizontal look -> RX 90.
+    rx, ry, rz = look_up_euler_deg((0.0, -5.0, 0.3), (0.0, 0.0, 0.3))
+    assert rx == pytest.approx(90.0)
+    assert (ry, rz) == (0.0, 0.0)
+
+
+def test_look_up_euler_adds_elevation_above_ninety():
+    # 3 m up over 3 m across -> 45 deg elevation -> RX 135.
+    rx, _, _ = look_up_euler_deg((0.0, -3.0, 0.0), (0.0, 0.0, 3.0))
+    assert rx == pytest.approx(135.0)
+
+
+def test_look_up_euler_straight_up_is_one_eighty():
+    rx, _, _ = look_up_euler_deg((0.0, -0.001, 0.0), (0.0, 0.0, 5.0))
+    assert rx == pytest.approx(180.0, abs=0.1)
 
 
 def test_non_finite_positions_rejected():

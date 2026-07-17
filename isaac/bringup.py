@@ -53,6 +53,12 @@ def parse_args():
     p.add_argument("--scene-light", type=float, default=0.0,
                    help="Add a dome light of this intensity to brighten a dark scene for the "
                         "detection test (0 = off; try ~2000-3000 for Curved Gridroom).")
+    p.add_argument("--drone-prop-alt", type=float, default=0.0,
+                   help="From-below detection test: hold a static drone at this altitude (m), "
+                        "no PX4/physics, ground camera auto-aimed up at it. 0 = off.")
+    p.add_argument("--drone-prop-standoff", type=float, default=5.0,
+                   help="Horizontal distance (m) of the ground camera from the drone prop "
+                        "(used with --drone-prop-alt). Increase to test detection at range.")
     p.add_argument("--frames", type=int, default=600,
                    help="Number of render steps to run, then exit. 0 = run until killed.")
     p.add_argument("--width", type=int, default=640, help="Camera width (px).")
@@ -96,6 +102,62 @@ def build_minimal_scene(world, width=640, height=480):
                            width=width, height=height)
     log(f"minimal scene built: /drone/rgb publisher ({width}x{height}) on overhead camera")
     return cam_path
+
+
+def build_drone_from_below_scene(alt, standoff, light, width=640, height=480):
+    """Detection test: a drone model held STATIC at altitude, ground camera auto-aimed up at it.
+
+    No PX4, no Pegasus, no physics -- we place the Iris mesh at (0,0,alt) and point a ground
+    camera up at it from (0,-standoff,0.3), publishing /static_cam/rgb. This validates the
+    from-below viewpoint (drone at flight height, against a dark 'sky' background, at a chosen
+    range) without depending on working flight dynamics. Sweep `standoff`/`alt` to test range.
+    """
+    from pxr import UsdLux, Sdf
+    import omni.usd
+    from pegasus.simulator.params import ROBOTS
+    from isaac.camera_graph import create_camera_prim, set_prim_transform, build_camera_ros_graph
+    from isaac.static_cam import look_up_euler_deg, ground_range_m
+
+    stage = omni.usd.get_context().get_stage()
+
+    dome = UsdLux.DomeLight.Define(stage, Sdf.Path("/World/DomeLight"))
+    dome.CreateIntensityAttr(float(light))
+    log(f"dome light added: intensity {light}")
+
+    # Reference the Iris mesh as a plain, static prop at altitude (we never step physics, so
+    # it simply hangs there).
+    drone_path = "/World/DroneProp"
+    prim = stage.DefinePrim(drone_path, "Xform")
+    prim.GetReferences().AddReference(ROBOTS["Iris"])
+    set_prim_transform(drone_path, translate=(0.0, 0.0, float(alt)), orient_euler_deg=(0.0, 0.0, 0.0))
+    log(f"drone prop placed at altitude {alt} m (static, no physics)")
+
+    cam_pos = (0.0, -float(standoff), 0.3)
+    target = (0.0, 0.0, float(alt))
+    euler = look_up_euler_deg(cam_pos, target)
+    cam_path = "/World/StaticGroundCam"
+    create_camera_prim(cam_path)
+    set_prim_transform(cam_path, cam_pos, euler)
+    build_camera_ros_graph("/World/StaticCamGraph", cam_path, "/static_cam/rgb", "rgb",
+                           width=width, height=height, frame_id="static_cam")
+    log(f"static ground camera at {cam_pos} auto-aimed up at {target} (euler {euler}), "
+        f"range ~{ground_range_m(cam_pos, target):.1f} m -> /static_cam/rgb")
+
+
+def render_only_loop(app, frames):
+    """Play the timeline and update the app (renders + ticks camera graphs) WITHOUT stepping
+    physics -- so a static prop stays put. Used by the from-below detection scene."""
+    import omni.timeline
+    timeline = omni.timeline.get_timeline_interface()
+    timeline.play()
+    log(f"timeline playing (render-only); {'until killed' if frames == 0 else frames} frames")
+    i = 0
+    while frames == 0 or i < frames:
+        app.update()
+        i += 1
+        if i % 120 == 0:
+            log(f"rendered {i} frames")
+    log(f"done after {i} frames")
 
 
 def build_pegasus_vehicle(scene, px4_dir, env_name=None, px4_autolaunch=True):
@@ -222,16 +284,23 @@ def main():
     args = parse_args()
     app = SimulationApp({"headless": True})
     try:
-        if args.no_vehicle or args.cameras or args.static_cam:
+        if args.no_vehicle or args.cameras or args.static_cam or args.drone_prop_alt > 0.0:
             enable_ros2_bridge(app)
 
-        if args.no_vehicle:
+        if args.drone_prop_alt > 0.0:
+            light = args.scene_light if args.scene_light > 0.0 else 3000.0
+            build_drone_from_below_scene(args.drone_prop_alt, args.drone_prop_standoff, light,
+                                         width=args.width, height=args.height)
+            log("from-below scene built")
+            render_only_loop(app, args.frames)
+        elif args.no_vehicle:
             from isaacsim.core.api import World
             world = World()
             log("world created")
             build_minimal_scene(world, width=args.width, height=args.height)
             world.reset()
             log("world reset")
+            run_loop(world, args.frames)
         else:
             pg, world = build_pegasus_vehicle(args.scene, args.px4_dir, env_name=args.env,
                                               px4_autolaunch=not args.external_px4)
@@ -248,8 +317,7 @@ def main():
                 add_scene_light(args.scene_light)
             world.reset()
             log("world reset")
-
-        run_loop(world, args.frames)
+            run_loop(world, args.frames)
     except BaseException as e:  # surface the real error before Isaac's hard shutdown
         log(f"ERROR: {type(e).__name__}: {e}")
         log("TRACEBACK:\n" + traceback.format_exc())

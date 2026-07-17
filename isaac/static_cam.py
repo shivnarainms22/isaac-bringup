@@ -53,6 +53,16 @@ def elevation_deg(cam_pos, target_pos) -> float:
     return degrees(atan2(dz, horizontal))
 
 
+def look_up_euler_deg(cam_pos, target_pos):
+    """USD RotateXYZ Euler (deg) to aim a ground camera UP at a target above and ahead of it.
+
+    Assumes the camera sits at -Y of the target and looks toward +Y (our standard placement),
+    so only pitch (RX) varies. Convention (verified empirically): RX=90 is horizontal toward
+    +Y, and adding the elevation angle tilts the view up. RX=0 down, RX=180 straight up.
+    """
+    return (90.0 + elevation_deg(cam_pos, target_pos), 0.0, 0.0)
+
+
 def ground_range_m(cam_pos, target_pos) -> float:
     """Straight-line distance from the camera to the target (metres)."""
     dx = target_pos[0] - cam_pos[0]

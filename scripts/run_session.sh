@@ -74,6 +74,8 @@ start_sim() {
     static_arg=(--static-cam)
     [ -n "${STATIC_CAM_POS:-}" ]   && static_arg+=(--static-cam-pos ${STATIC_CAM_POS})
     [ -n "${STATIC_CAM_EULER:-}" ] && static_arg+=(--static-cam-euler ${STATIC_CAM_EULER})
+    # SCENE_LIGHT=<intensity> brightens a dark scene so the detector gets more contrast.
+    [ -n "${SCENE_LIGHT:-}" ]      && static_arg+=(--scene-light ${SCENE_LIGHT})
   fi
   nohup docker exec "$CONTAINER" bash /work/scripts/_entry.sh \
       "${env_arg[@]}" --external-px4 --cameras "${static_arg[@]}" --frames 0 > "$SIM_LOG" 2>&1 &

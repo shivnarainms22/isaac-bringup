@@ -50,6 +50,9 @@ def parse_args():
                    metavar=("RX", "RY", "RZ"),
                    help="USD RotateXYZ Euler degrees for the static camera aim "
                         "(default from static_cam.py; tune with verify/grab_frame.py).")
+    p.add_argument("--scene-light", type=float, default=0.0,
+                   help="Add a dome light of this intensity to brighten a dark scene for the "
+                        "detection test (0 = off; try ~2000-3000 for Curved Gridroom).")
     p.add_argument("--frames", type=int, default=600,
                    help="Number of render steps to run, then exit. 0 = run until killed.")
     p.add_argument("--width", type=int, default=640, help="Camera width (px).")
@@ -160,6 +163,22 @@ def attach_drone_cameras(width=640, height=480):
     log("drone cameras attached: /drone/rgb + /drone/depth on body")
 
 
+def add_scene_light(intensity):
+    """Add a dome light to brighten a dark scene (e.g. Curved Gridroom) for the detection test.
+
+    The dim builtin env leaves the drone nearly black, which starves the detector of contrast.
+    A dome light lifts overall illumination so the drone reads clearly. Mirrors the M1 minimal
+    scene's DomeLight. Idempotent-ish: defines a uniquely-named prim.
+    """
+    from pxr import UsdLux, Sdf
+    import omni.usd
+
+    stage = omni.usd.get_context().get_stage()
+    dome = UsdLux.DomeLight.Define(stage, Sdf.Path("/World/ExperimentDomeLight"))
+    dome.CreateIntensityAttr(float(intensity))
+    log(f"scene dome light added: intensity {intensity}")
+
+
 def attach_static_ground_camera(translate, orient_euler_deg, width=640, height=480):
     """Static-cam experiment: a fixed WORLD camera on the ground, aimed up at the drone.
 
@@ -225,6 +244,8 @@ def main():
                 euler = args.static_cam_euler if args.static_cam_euler is not None \
                     else DEFAULT_STATIC_CAM.orient_euler_deg
                 attach_static_ground_camera(pos, euler, width=args.width, height=args.height)
+            if args.scene_light > 0.0:
+                add_scene_light(args.scene_light)
             world.reset()
             log("world reset")
 

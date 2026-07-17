@@ -115,7 +115,7 @@ class StaticCamDetector(Node):
         self.results.append(FrameResult(detected=best > 0.0, confidence=best))
         n = len(self.results)
 
-        if self.args.save_dir and (best > 0.0 or n % 20 == 0):
+        if self.args.save_dir and (best > 0.0 or n == 1 or n % 20 == 0):
             annotated = res.plot()  # BGR image with boxes drawn
             _save_png(f"{self.args.save_dir}/frame_{n:04d}.png", annotated)
 

@@ -7,3 +7,7 @@ __pycache__/
 *.usd
 *.usdc
 .DS_Store
+# YOLO weights are large (100+ MB) and fetched by scripts/setup_detect.sh, not committed.
+detect/weights/
+*.pt
+*.onnx

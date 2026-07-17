@@ -29,10 +29,10 @@ from detect.detection_summary import FrameResult, format_summary, summarize
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--weights", default="yolov8n.pt",
-                   help="Ultralytics YOLO weights. Point at your project's DRONE detector "
-                        "for the real signal; yolov8n.pt (COCO) only smoke-tests the pipeline "
-                        "(COCO has no 'drone' class).")
+    p.add_argument("--weights", default="/work/detect/weights/drone.pt",
+                   help="Ultralytics YOLO weights. Default = the public drone-detection model "
+                        "fetched by scripts/setup_detect.sh (doguilmak/Drone-Detection-YOLOv8x). "
+                        "Pass yolov8n.pt to smoke-test the pipeline only (COCO has no 'drone').")
     p.add_argument("--topic", default="/static_cam/rgb", help="rgb8 image topic to subscribe to.")
     p.add_argument("--conf", type=float, default=0.25,
                    help="Confidence threshold for counting a detection.")
@@ -87,6 +87,9 @@ class StaticCamDetector(Node):
             f"listening on {args.topic}; weights={args.weights}; "
             f"classes={'all' if self.want is None else sorted(self.want)}; "
             f"conf>={args.conf}; target {args.frames} frames")
+        # Show what the model can actually output, so a NOT_DETECTED can be told apart from a
+        # class-name mismatch, and so --classes can be narrowed if the model is multi-class.
+        self.get_logger().info(f"model classes: {dict(self.names)}")
 
     def _class_matches(self, cls_id) -> bool:
         if self.want is None:

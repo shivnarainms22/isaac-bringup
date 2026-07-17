@@ -20,7 +20,8 @@ runs YOLO on it — no hardware, no going outside.
 
 Pull the repo first: `git -C ~/isaac-bringup pull`
 
-**1. Build the detector image once (needs internet):**
+**1. One-time setup (needs internet):** builds the detector image AND downloads the drone
+model (`doguilmak/Drone-Detection-YOLOv8x`, ~137 MB) to `detect/weights/drone.pt`:
 ```
 bash ~/isaac-bringup/scripts/setup_detect.sh
 ```
@@ -43,17 +44,18 @@ docker run --rm --network=host --ipc=host -e ROS_DOMAIN_ID=0 -e RMW_IMPLEMENTATI
 If the drone is off-frame, re-launch with a tuned aim, e.g. add to the sim launch:
 `--static-cam-pos 0 -6 0.5 --static-cam-euler 55 0 0` (or edit defaults in `isaac/static_cam.py`).
 
-**4. Run the detector.** With your project's drone weights (the real signal):
+**4. Run the detector.** Uses the bundled drone model (`detect/weights/drone.pt`) by default:
 ```
-bash ~/isaac-bringup/scripts/run_detect.sh --weights /work/detect/weights/drone.pt --frames 200
+bash ~/isaac-bringup/scripts/run_detect.sh --frames 200
 ```
-Smoke test only (COCO — has no "drone" class, just proves the pipeline flows):
+The node logs the model's class list on startup (so a NOT_DETECTED can be told apart from a
+class-name mismatch). Save annotated frames to see exactly what fired:
 ```
-bash ~/isaac-bringup/scripts/run_detect.sh --frames 100
+bash ~/isaac-bringup/scripts/run_detect.sh --frames 200 --save-dir /work/detect/out
 ```
-Save annotated frames to see what fired:
+Pipeline-only smoke test with COCO (no "drone" class; look for what it confuses the drone with):
 ```
-bash ~/isaac-bringup/scripts/run_detect.sh --weights /work/detect/weights/drone.pt --frames 200 --save-dir /work/detect/out
+bash ~/isaac-bringup/scripts/run_detect.sh --weights yolov8n.pt --classes airplane,bird,kite --frames 100
 ```
 
 ## Reading the verdict
@@ -74,7 +76,10 @@ VERDICT        : DETECTED
 - The rendered drone is Pegasus's **Iris** mesh, not the project's X500. A NOT_DETECTED could be
   the sim *appearance*, not the viewpoint. Confirm the aim frame first (step 3), and treat a
   clean DETECTED as strong evidence and a NOT_DETECTED as "investigate", not "the idea is dead".
-- Weights matter: COCO YOLO has no drone class. Use a drone-trained model for the real answer;
-  put weights under `detect/weights/` (they mount into the container at `/work/detect/weights/`).
+- Weights: the default model (`doguilmak/Drone-Detection-YOLOv8x`) is a PUBLIC drone detector,
+  not the project's own (the project has none yet). It's a feasibility proxy — good enough to
+  answer "can a ground camera detect the drone at all", not a production choice. Swap in a
+  project/fine-tuned model later via `--weights`.
 
-Weights live outside git (large); create `detect/weights/` on the box and drop your `.pt` there.
+Weights live outside git (large, `.gitignore`d); `setup_detect.sh` fetches them to
+`detect/weights/drone.pt`, which mounts into the container at `/work/detect/weights/drone.pt`.

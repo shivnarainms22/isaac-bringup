@@ -1,0 +1,3 @@
+# Keep large weights out of the docker build context (they mount in at runtime instead).
+weights/
+out/

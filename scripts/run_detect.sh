@@ -4,8 +4,8 @@
 # Any args are passed straight through to detect_static_cam.py.
 #
 # Usage (on the GPU box, after setup_detect.sh):
-#   bash ~/isaac-bringup/scripts/run_detect.sh --weights /work/detect/weights/drone.pt --frames 200
-#   bash ~/isaac-bringup/scripts/run_detect.sh                 # smoke test: yolov8n.pt (COCO)
+#   bash ~/isaac-bringup/scripts/run_detect.sh --frames 200    # uses detect/weights/drone.pt
+#   bash ~/isaac-bringup/scripts/run_detect.sh --weights yolov8n.pt --classes airplane,bird  # COCO smoke test
 set -eo pipefail
 
 REPO="${REPO:-$HOME/isaac-bringup}"

@@ -69,6 +69,10 @@ def parse_args():
                    help="Half-width (m) of each level pass across the camera view.")
     p.add_argument("--frames", type=int, default=600,
                    help="Number of render steps to run, then exit. 0 = run until killed.")
+    p.add_argument("--livestream", action="store_true",
+                   help="Enable Isaac WebRTC livestream so the render can be viewed live in a "
+                        "browser (needs --network=host + ports 8211/tcp, 49100/tcp, 47998/udp "
+                        "reachable). Browser: http://<box-ip>:8211/streaming/webrtc-client?server=<box-ip>")
     p.add_argument("--width", type=int, default=640, help="Camera width (px).")
     p.add_argument("--height", type=int, default=480, help="Camera height (px).")
     return p.parse_args()
@@ -375,7 +379,11 @@ def run_loop(world, frames):
 def main():
     import traceback
     args = parse_args()
-    app = SimulationApp({"headless": True})
+    sim_config = {"headless": True}
+    if args.livestream:
+        sim_config["livestream"] = "webrtc"   # live browser view (see --livestream help)
+        log("WebRTC livestream requested; connect a browser once you see 'Isaac Sim Full Streaming App is loaded'")
+    app = SimulationApp(sim_config)
     try:
         if (args.no_vehicle or args.cameras or args.static_cam or args.drone_prop_alt > 0.0
                 or args.flight_demo):

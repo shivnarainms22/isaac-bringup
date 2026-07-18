@@ -45,6 +45,9 @@ def parse_args(argv=None):
                    help="Number of frames to analyse, then print the verdict and exit.")
     p.add_argument("--save-dir", default=None,
                    help="If set, save annotated frames here so you can eyeball what fired.")
+    p.add_argument("--save-stride", type=int, default=20,
+                   help="Save every Nth frame to --save-dir (plus every detection). Use a small "
+                        "value (e.g. 3) to capture a smooth flight video.")
     return p.parse_args(argv)
 
 
@@ -115,7 +118,7 @@ class StaticCamDetector(Node):
         self.results.append(FrameResult(detected=best > 0.0, confidence=best))
         n = len(self.results)
 
-        if self.args.save_dir and (best > 0.0 or n == 1 or n % 20 == 0):
+        if self.args.save_dir and (best > 0.0 or n == 1 or n % self.args.save_stride == 0):
             annotated = res.plot()  # BGR image with boxes drawn
             _save_png(f"{self.args.save_dir}/frame_{n:04d}.png", annotated)
 

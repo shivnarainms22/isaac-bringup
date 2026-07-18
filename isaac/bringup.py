@@ -59,6 +59,14 @@ def parse_args():
     p.add_argument("--drone-prop-standoff", type=float, default=5.0,
                    help="Horizontal distance (m) of the ground camera from the drone prop "
                         "(used with --drone-prop-alt). Increase to test detection at range.")
+    p.add_argument("--flight-demo", action="store_true",
+                   help="Scripted-flight perception demo: drone takes off, holds altitude, and "
+                        "sweeps across a ground camera's upward view (no PX4). Publishes /static_cam/rgb.")
+    p.add_argument("--flight-alt", type=float, default=15.0, help="Flight cruise altitude (m).")
+    p.add_argument("--flight-standoff", type=float, default=14.0,
+                   help="Horizontal distance (m) from the ground camera to the flight line.")
+    p.add_argument("--flight-span", type=float, default=20.0,
+                   help="Half-width (m) of each level pass across the camera view.")
     p.add_argument("--frames", type=int, default=600,
                    help="Number of render steps to run, then exit. 0 = run until killed.")
     p.add_argument("--width", type=int, default=640, help="Camera width (px).")
@@ -167,6 +175,82 @@ def render_only_loop(app, frames):
         if i % 120 == 0:
             log(f"rendered {i} frames")
     log(f"done after {i} frames")
+
+
+def _update_translate(stage, prim_path, xyz):
+    """Efficiently update just a prim's translate op each frame (reuse it, don't re-add)."""
+    from pxr import UsdGeom, Gf
+    xform = UsdGeom.Xformable(stage.GetPrimAtPath(prim_path))
+    op = None
+    for o in xform.GetOrderedXformOps():
+        if o.GetOpType() == UsdGeom.XformOp.TypeTranslate:
+            op = o
+            break
+    if op is None:
+        op = xform.AddTranslateOp()
+    op.Set(Gf.Vec3d(float(xyz[0]), float(xyz[1]), float(xyz[2])))
+
+
+def build_flight_demo_scene(alt, standoff, span, light, width=1280, height=720):
+    """Scripted-flight perception demo: a drone flies a path at altitude while a ground camera,
+    auto-aimed up, watches. Daylight (sky dome + sun from above) mimics the real drone-vs-sky
+    photos the detector scored 0.76 on. No PX4/physics -- the drone is animated kinematically
+    (see isaac.flight_path), so it reliably takes off, holds altitude, and sweeps the view.
+    Returns the drone prim path for the animation loop.
+    """
+    from pxr import UsdLux, Sdf
+    import omni.usd
+    from pegasus.simulator.params import ROBOTS
+    from isaac.camera_graph import create_camera_prim, set_prim_transform, build_camera_ros_graph
+    from isaac.static_cam import look_up_euler_deg, ground_range_m
+
+    stage = omni.usd.get_context().get_stage()
+
+    dome = UsdLux.DomeLight.Define(stage, Sdf.Path("/World/SkyDome"))
+    dome.CreateIntensityAttr(float(light))                 # sky fill; tune via --scene-light
+    sun = UsdLux.DistantLight.Define(stage, Sdf.Path("/World/Sun"))
+    sun.CreateIntensityAttr(3000.0)                        # default orientation = from above
+    log(f"daylight: sky dome {light} + sun")
+
+    drone_path = "/World/DroneProp"
+    prim = stage.DefinePrim(drone_path, "Xform")
+    prim.GetReferences().AddReference(ROBOTS["Iris"])
+    set_prim_transform(drone_path, translate=(-span, standoff, 0.0), orient_euler_deg=(0.0, 0.0, 0.0))
+    log("drone prop referenced (kinematic flight)")
+
+    cam_pos = (0.0, 0.0, 0.5)
+    target = (0.0, float(standoff), float(alt))            # aim at the mid-path point at altitude
+    euler = look_up_euler_deg(cam_pos, target)
+    cam_path = "/World/StaticGroundCam"
+    create_camera_prim(cam_path)
+    set_prim_transform(cam_path, cam_pos, euler)
+    build_camera_ros_graph("/World/StaticCamGraph", cam_path, "/static_cam/rgb", "rgb",
+                           width=width, height=height, frame_id="static_cam")
+    log(f"static cam at {cam_pos} auto-aimed up at {target} (euler {euler}), "
+        f"slant ~{ground_range_m(cam_pos, target):.0f} m, {width}x{height} -> /static_cam/rgb")
+    return drone_path
+
+
+def flight_demo_loop(app, drone_path, alt, standoff, span, frames):
+    """Animate the drone along the scripted path (render-only, no physics) and publish frames."""
+    import omni.timeline
+    import omni.usd
+    from isaac.flight_path import drone_position
+    stage = omni.usd.get_context().get_stage()
+    timeline = omni.timeline.get_timeline_interface()
+    timeline.play()
+    takeoff_frames, cruise_frames = 90, 200
+    log(f"flight demo playing: takeoff {takeoff_frames}f -> cruise passes; "
+        f"{'until killed' if frames == 0 else frames} frames")
+    i = 0
+    while frames == 0 or i < frames:
+        x, y, z = drone_position(i, takeoff_frames, cruise_frames, span, standoff, alt)
+        _update_translate(stage, drone_path, (x, y, z))
+        app.update()
+        i += 1
+        if i % 120 == 0:
+            log(f"flight frame {i}: drone at ({x:.1f}, {y:.1f}, {z:.1f})")
+    log(f"flight demo done after {i} frames")
 
 
 def build_pegasus_vehicle(scene, px4_dir, env_name=None, px4_autolaunch=True):
@@ -293,10 +377,20 @@ def main():
     args = parse_args()
     app = SimulationApp({"headless": True})
     try:
-        if args.no_vehicle or args.cameras or args.static_cam or args.drone_prop_alt > 0.0:
+        if (args.no_vehicle or args.cameras or args.static_cam or args.drone_prop_alt > 0.0
+                or args.flight_demo):
             enable_ros2_bridge(app)
 
-        if args.drone_prop_alt > 0.0:
+        if args.flight_demo:
+            light = args.scene_light if args.scene_light > 0.0 else 1500.0
+            w = args.width if args.width != 640 else 1280      # default to higher res for range
+            h = args.height if args.height != 480 else 720
+            drone_path = build_flight_demo_scene(args.flight_alt, args.flight_standoff,
+                                                 args.flight_span, light, width=w, height=h)
+            log("flight-demo scene built")
+            flight_demo_loop(app, drone_path, args.flight_alt, args.flight_standoff,
+                             args.flight_span, args.frames)
+        elif args.drone_prop_alt > 0.0:
             light = args.scene_light if args.scene_light > 0.0 else 30000.0
             build_drone_from_below_scene(args.drone_prop_alt, args.drone_prop_standoff, light,
                                          width=args.width, height=args.height)
